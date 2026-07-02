@@ -99,6 +99,14 @@ def auth_db_path() -> Path:
 
 
 def studio_db_path() -> Path:
+    """Live Studio DB. UNSLOTH_STUDIO_DB_PATH overrides the location so hosted
+    runtimes (e.g. Colab) can point it at a session-scoped file while keeping
+    models/cache under studio_root(). Must be a local filesystem path: the DB
+    runs in WAL mode, which is unsafe on network/FUSE mounts like Google Drive.
+    """
+    override = (os.environ.get("UNSLOTH_STUDIO_DB_PATH") or "").strip()
+    if override:
+        return Path(override).expanduser()
     return studio_root() / "studio.db"
 
 

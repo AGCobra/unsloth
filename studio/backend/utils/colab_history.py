@@ -323,6 +323,23 @@ class HistorySync:
 
     # ── snapshot (the only writes this session makes on the drive) ──
 
+    @staticmethod
+    def _publish(data_path: Path, dst: Path) -> None:
+        """Copy ``data_path`` next to ``dst`` and rename into place, fsyncing
+        first. On Drive's FUSE mount writes are cached and uploaded in the
+        background; fsync hands the bytes to the drive daemon instead of
+        leaving them in the page cache (best-effort: some FUSE layers reject
+        fsync, which must not fail the snapshot)."""
+        tmp = dst.with_name(dst.name + ".tmp")
+        with open(data_path, "rb") as src_f, open(tmp, "wb") as dst_f:
+            shutil.copyfileobj(src_f, dst_f)
+            dst_f.flush()
+            try:
+                os.fsync(dst_f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, dst)
+
     def _heartbeat(self) -> None:
         self.session_dir.mkdir(parents = True, exist_ok = True)
         payload = json.dumps({
@@ -331,7 +348,13 @@ class HistorySync:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         tmp = self.meta_path.with_suffix(".json.tmp")
-        tmp.write_text(payload)
+        with open(tmp, "w") as f:
+            f.write(payload)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
         os.replace(tmp, self.meta_path)
 
     def _live_changed(self) -> bool:
@@ -350,7 +373,8 @@ class HistorySync:
         """Extract history tables from the live DB and publish atomically.
 
         Includes ``running`` rows: this file has a single writer (us), so a
-        crash costs at most one snapshot interval of history.
+        crash costs at most one snapshot interval of history plus whatever
+        upload lag the drive mount adds after fsync.
         """
         self._heartbeat()
         changed = self._live_changed()  # always: keeps the version watermark current
@@ -365,9 +389,7 @@ class HistorySync:
             finally:
                 conn.close()
             merge_history(self.live_db, local, on_running = "import")
-            drive_tmp = self.snapshot_path.with_suffix(".db.tmp")
-            shutil.copyfile(local, drive_tmp)
-            os.replace(drive_tmp, self.snapshot_path)
+            self._publish(local, self.snapshot_path)
         return True
 
     # ── merge-on-read ──

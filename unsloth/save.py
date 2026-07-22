@@ -478,6 +478,39 @@ def _free_cached_model(model):
             delete_strategy.execute()
 
 
+_TEMPORARY_MERGED_WEIGHT_PATTERNS = (
+    "model*.safetensors",
+    "model*.safetensors.index.json",
+    "pytorch_model*.bin",
+    "pytorch_model*.bin.index.json",
+)
+
+
+def _remove_temporary_merged_weights(model_directory):
+    """Remove only HF weight shards after their GGUF conversion has completed.
+
+    The caller is responsible for restricting this to an exporter-owned temporary directory.
+    Config and tokenizer files remain available for the Hub metadata upload.
+    """
+    model_directory = Path(model_directory)
+    weight_files = {
+        path
+        for pattern in _TEMPORARY_MERGED_WEIGHT_PATTERNS
+        for path in model_directory.glob(pattern)
+        if path.is_file()
+    }
+    removed_bytes = 0
+    removed_files = []
+    for path in sorted(weight_files):
+        try:
+            removed_bytes += path.stat().st_size
+            path.unlink()
+            removed_files.append(str(path))
+        except FileNotFoundError:
+            continue
+    return removed_files, removed_bytes
+
+
 def _merge_lora(layer, name):
     bias = getattr(layer, "bias", None)
     if isinstance(layer, (Bnb_Linear4bit, Peft_Linear4bit, Peft_Linear)):
@@ -1634,6 +1667,7 @@ def save_to_gguf(
     is_vlm: bool = False,
     is_gpt_oss: bool = False,
     imatrix = None,
+    delete_intermediate_weights: bool = False,
 ):
     """
     Orchestrates the complete GGUF conversion process.
@@ -1836,6 +1870,22 @@ def save_to_gguf(
     initial_files = moved_files
 
     print(f"Unsloth: Initial conversion completed! Files: {initial_files}")
+
+    # Hub exports use an isolated temporary HF checkpoint as the converter input. Once every
+    # initial GGUF file is closed, verified, and moved, quantization reads only those GGUF files.
+    # Reclaim the merged HF shards before quantization; this cannot change the generated GGUF.
+    if delete_intermediate_weights:
+        try:
+            removed_files, removed_bytes = _remove_temporary_merged_weights(model_directory)
+            if removed_files:
+                print(
+                    f"Unsloth: Removed {len(removed_files)} temporary merged weight file(s), "
+                    f"freeing {removed_bytes / 1024**3:.2f} GB before GGUF quantization."
+                )
+        except OSError as error:
+            logger.warning_once(
+                f"Unsloth: Could not remove temporary merged weights before quantization: {error}"
+            )
 
     # Step 4: Additional quantizations using llama-quantize
     all_saved_locations = initial_files.copy()
@@ -2530,6 +2580,7 @@ def unsloth_save_pretrained_gguf(
     maximum_memory_usage: float = 0.85,
     save_method: str = None,
     imatrix_file = None,
+    _delete_intermediate_merged_weights: bool = False,
 ):
     """
     Same as .save_pretrained(...) except 4bit weights are auto
@@ -2654,6 +2705,15 @@ def unsloth_save_pretrained_gguf(
     del arguments["base_model_name"]
     del arguments["is_processor"]
     del arguments["imatrix_file"]  # only used by the gguf quantize step, not the 16bit merge
+    del arguments["_delete_intermediate_merged_weights"]
+
+    # Keep the exact exporter-owned directory. A non-PEFT model may later redirect conversion to
+    # its existing local checkpoint; that directory must never be cleaned by this optimization.
+    temporary_merged_directory = (
+        os.path.realpath(os.fspath(save_directory))
+        if _delete_intermediate_merged_weights
+        else None
+    )
 
     # Step 3: Fix tokenizer BOS token if needed
     if is_processor:
@@ -2771,6 +2831,10 @@ def unsloth_save_pretrained_gguf(
         logger.warning(f"Unsloth: fix_sentencepiece_gguf skipped ({type(e).__name__}): {e}")
 
     try:
+        delete_intermediate_weights = (
+            temporary_merged_directory is not None
+            and os.path.realpath(os.fspath(save_directory)) == temporary_merged_directory
+        )
         all_file_locations, want_full_precision, is_vlm_update = save_to_gguf(
             model_name = model_name,
             model_type = model_type,
@@ -2782,6 +2846,7 @@ def unsloth_save_pretrained_gguf(
             is_vlm = is_vlm,  # Pass VLM flag
             is_gpt_oss = is_gpt_oss,  # Pass gpt_oss Flag
             imatrix = imatrix_path,
+            delete_intermediate_weights = delete_intermediate_weights,
         )
     except Exception as e:
         if IS_KAGGLE_ENVIRONMENT:
@@ -2975,6 +3040,7 @@ def unsloth_push_to_hub_gguf(
             temporary_location = temporary_location,
             maximum_memory_usage = maximum_memory_usage,
             imatrix_file = imatrix_file,
+            _delete_intermediate_merged_weights = cleanup_temp,
         )
 
         # Extract results
@@ -3042,6 +3108,17 @@ def unsloth_push_to_hub_gguf(
                 create_pr = create_pr,
                 revision = revision,
             )
+
+            # upload_file is synchronous. The remote object is complete at this point, so the
+            # exporter-owned local copy can be reclaimed without changing what reached the Hub.
+            if cleanup_temp:
+                try:
+                    Path(file_location).unlink(missing_ok = True)
+                except OSError as error:
+                    logger.warning_once(
+                        f"Unsloth: Could not remove uploaded temporary GGUF "
+                        f"{file_location}: {error}"
+                    )
 
         # Upload config.json if exists
         config_path = os.path.join(actual_save_directory, "config.json")

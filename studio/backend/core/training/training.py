@@ -329,6 +329,7 @@ class TrainingBackend:
             "warmup_ratio": kwargs.get("warmup_ratio"),
             "max_steps": kwargs.get("max_steps", 0),
             "save_steps": kwargs.get("save_steps", 0),
+            "save_total_limit": kwargs.get("save_total_limit", 2),
             "weight_decay": kwargs.get("weight_decay", 0.001),
             "max_grad_norm": kwargs.get("max_grad_norm", 0.0),
             "max_grad_value": _coerce_optional_nonneg_float(

@@ -374,6 +374,10 @@ class UnslothTrainer:
         if save_steps_val and save_steps_val > 0:
             config["save_steps"] = save_steps_val
             config["save_strategy"] = "steps"
+            # Rotate old checkpoints so long runs don't fill the disk; 0 keeps all.
+            save_total_limit_val = training_args.get("save_total_limit", 2)
+            if save_total_limit_val and save_total_limit_val > 0:
+                config["save_total_limit"] = save_total_limit_val
 
         # Apply per-branch overrides
         if extra_args:
@@ -3265,6 +3269,10 @@ class UnslothTrainer:
             if save_steps_val and save_steps_val > 0:
                 config_args["save_steps"] = save_steps_val
                 config_args["save_strategy"] = "steps"
+                # Rotate old checkpoints so long runs don't fill the disk; 0 keeps all.
+                save_total_limit_val = training_args.get("save_total_limit", 2)
+                if save_total_limit_val and save_total_limit_val > 0:
+                    config_args["save_total_limit"] = save_total_limit_val
 
             # If max_steps is specified, use it instead of epochs
             max_steps_val = training_args.get("max_steps", 0)

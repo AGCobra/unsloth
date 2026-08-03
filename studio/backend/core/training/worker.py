@@ -1870,6 +1870,11 @@ def _run_mlx_training(event_queue, stop_queue, config):
         # Studio SFT formatting owns rendered examples; raw/CPT text still
         # needs MLX to append EOS like the CUDA raw-text path.
         mlx_config_kwargs["append_eos"] = bool(raw_text_mode)
+    if "save_total_limit" in _supported_fields:
+        # Rotate old checkpoints so long runs don't fill the disk; 0 keeps all.
+        _save_total_limit = int(config.get("save_total_limit", 2) or 0)
+        if _save_total_limit > 0:
+            mlx_config_kwargs["save_total_limit"] = _save_total_limit
 
     trainer = MLXTrainer(
         model = model,
@@ -3057,6 +3062,7 @@ def run_training_process(*, event_queue: Any, stop_queue: Any, config: dict) -> 
             warmup_ratio = config.get("warmup_ratio"),
             max_steps = max_steps if max_steps and max_steps > 0 else 0,
             save_steps = save_steps if save_steps and save_steps > 0 else 0,
+            save_total_limit = config.get("save_total_limit", 2),
             weight_decay = config.get("weight_decay", 0.001),
             random_seed = config.get("random_seed", 3407),
             packing = config.get("packing", False),
@@ -3555,6 +3561,10 @@ def _run_embedding_training(event_queue: Any, stop_queue: Any, config: dict) -> 
     if save_steps_val and save_steps_val > 0:
         training_args_kwargs["save_steps"] = save_steps_val
         training_args_kwargs["save_strategy"] = "steps"
+        # Rotate old checkpoints so long runs don't fill the disk; 0 keeps all.
+        save_total_limit_val = config.get("save_total_limit", 2)
+        if save_total_limit_val and save_total_limit_val > 0:
+            training_args_kwargs["save_total_limit"] = save_total_limit_val
 
     args = SentenceTransformerTrainingArguments(**training_args_kwargs)
 

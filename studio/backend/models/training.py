@@ -351,6 +351,15 @@ class TrainingStartRequest(BaseModel):
             raise ValueError(f"save_steps must be in [0, {_MAX_STEPS}] (got {v!r})")
         return v
 
+    @field_validator("save_total_limit")
+    @classmethod
+    def _check_save_total_limit(cls, v: int) -> int:
+        if v is None:
+            return 2
+        if v < 0 or v > _MAX_STEPS:
+            raise ValueError(f"save_total_limit must be in [0, {_MAX_STEPS}] (got {v!r})")
+        return v
+
     @field_validator("weight_decay")
     @classmethod
     def _check_weight_decay(cls, v: float) -> float:
@@ -413,6 +422,10 @@ class TrainingStartRequest(BaseModel):
     warmup_ratio: Optional[float] = Field(None, description = "Warmup ratio")
     max_steps: Optional[int] = Field(None, description = "Maximum training steps")
     save_steps: int = Field(100, description = "Steps between checkpoints")
+    save_total_limit: int = Field(
+        2,
+        description = "Max checkpoints kept on disk; oldest are deleted first. 0 keeps all.",
+    )
     weight_decay: float = Field(0.001, description = "Weight decay")
     max_grad_norm: float = Field(
         0.0,

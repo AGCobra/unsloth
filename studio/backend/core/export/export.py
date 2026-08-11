@@ -627,6 +627,16 @@ class ExportBackend:
         except Exception as e:
             logger.warning(f"Could not write export metadata: {e}")
 
+    def _upload_training_stats(self, repo_id: str, hf_token: str):
+        """Attach the selected checkpoint's Training History view to a Hub export."""
+        from core.export.training_stats_image import upload_training_stats_png
+
+        return upload_training_stats_png(
+            checkpoint_path = self.current_checkpoint,
+            repo_id = repo_id,
+            hf_token = hf_token,
+        )
+
     def export_merged_model(
         self,
         save_directory: str,
@@ -856,6 +866,7 @@ class ExportBackend:
                         token = hf_token,
                         private = private,
                     )
+                self._upload_training_stats(repo_id, hf_token)
                 logger.info(f"Model pushed successfully to {repo_id}")
 
             return True, "Model exported successfully", output_path
@@ -989,6 +1000,8 @@ class ExportBackend:
                             "Local save directory required for Hub upload",
                             None,
                         )
+
+                self._upload_training_stats(repo_id, hf_token)
 
             return True, "Model exported successfully", output_path
 
@@ -1198,6 +1211,7 @@ class ExportBackend:
                     token = hf_token,
                     **imatrix_kw,
                 )
+                self._upload_training_stats(repo_id, hf_token)
                 logger.info(f"GGUF model pushed successfully to {repo_id}")
 
             return (
@@ -1365,6 +1379,7 @@ class ExportBackend:
                 else:
                     self.current_model.push_to_hub(repo_id, token = hf_token, private = private)
                     self.current_tokenizer.push_to_hub(repo_id, token = hf_token, private = private)
+                self._upload_training_stats(repo_id, hf_token)
                 logger.info(f"Adapter pushed successfully to {repo_id}")
 
             return True, "LoRA adapter exported successfully", output_path

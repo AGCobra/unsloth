@@ -1200,19 +1200,48 @@ OLLAMA_TEMPLATES["gemma-3n"] = gemma3n_ollama
 OLLAMA_TEMPLATES["gemma3n"] = gemma3n_ollama
 
 # =========================================== Gemma-4
+# Two prompt conventions (https://ai.google.dev/gemma/docs/capabilities/thinking):
+# 12B / 26B-A4B / 31B prefill an empty "<|channel>thought\n<channel|>" block after
+# the trailing <|turn>model (thinking off); E2B / E4B never emit it. Historical
+# model turns hold only the final response, so they get no thought block.
 gemma4_ollama = '''
 FROM {__FILE_LOCATION__}
 TEMPLATE """{{- range $i, $_ := .Messages }}
 {{- $last := eq (len (slice $.Messages $i)) 1 }}
-<|turn>{{ .Role }}
+{{- if eq .Role "system" }}<|turn>system
+{{ .Content }}<turn|>
+{{ else if eq .Role "user" }}<|turn>user
+{{ .Content }}<turn|>
+{{ if $last }}<|turn>model
+<|channel>thought
+<channel|>{{ end }}
+{{- else if eq .Role "assistant" }}<|turn>model
 {{ .Content }}{{ if not $last }}<turn|>
 {{ end }}
-{{- end }}<turn|>
-<|turn>model
-"""
+{{- end }}
+{{- end }}"""
 '''
 OLLAMA_TEMPLATES["gemma-4"] = gemma4_ollama
 OLLAMA_TEMPLATES["gemma4"] = gemma4_ollama
+
+gemma4_edge_ollama = '''
+FROM {__FILE_LOCATION__}
+TEMPLATE """{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 }}
+{{- if eq .Role "system" }}<|turn>system
+{{ .Content }}<turn|>
+{{ else if eq .Role "user" }}<|turn>user
+{{ .Content }}<turn|>
+{{ if $last }}<|turn>model
+{{ end }}
+{{- else if eq .Role "assistant" }}<|turn>model
+{{ .Content }}{{ if not $last }}<turn|>
+{{ end }}
+{{- end }}
+{{- end }}"""
+'''
+OLLAMA_TEMPLATES["gemma-4-edge"] = gemma4_edge_ollama
+OLLAMA_TEMPLATES["gemma4-edge"] = gemma4_edge_ollama
 
 # =========================================== GPT-OSS
 
@@ -1977,6 +2006,19 @@ OLLAMA_TEMPLATE_TO_MODEL_MAPPER = {
         "unsloth/medgemma-27b-text-it-bnb-4bit",
     ),
     "gemma4": (
+        "unsloth/gemma-4-12B-it",
+        "unsloth/gemma-4-12B-it-unsloth-bnb-4bit",
+        "google/gemma-4-12B-it",
+        "unsloth/gemma-4-12B",
+        "unsloth/gemma-4-31B-it",
+        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit",
+        "google/gemma-4-31B-it",
+        "unsloth/gemma-4-31B",
+        "unsloth/gemma-4-26B-A4B-it",
+        "google/gemma-4-26B-A4B-it",
+        "unsloth/gemma-4-26B-A4B",
+    ),
+    "gemma4-edge": (
         "unsloth/gemma-4-E2B-it",
         "unsloth/gemma-4-E2B-it-unsloth-bnb-4bit",
         "google/gemma-4-E2B-it",
@@ -1985,13 +2027,6 @@ OLLAMA_TEMPLATE_TO_MODEL_MAPPER = {
         "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit",
         "google/gemma-4-E4B-it",
         "unsloth/gemma-4-E4B",
-        "unsloth/gemma-4-31B-it",
-        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit",
-        "google/gemma-4-31B-it",
-        "unsloth/gemma-4-31B",
-        "unsloth/gemma-4-26B-A4B-it",
-        "google/gemma-4-26B-A4B-it",
-        "unsloth/gemma-4-26B-A4B",
     ),
     "gemma3n": (
         "unsloth/gemma-3n-E4B-it-unsloth-bnb-4bit",

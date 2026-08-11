@@ -909,7 +909,14 @@ CHAT_TEMPLATES["gemma3n"] = (gemma3n_template, gemma3n_template_eos_token, False
 DEFAULT_SYSTEM_MESSAGE["gemma3n"] = None # No system message in Gemma-3n
 
 # =========================================== Gemma-4
-# Gemma-4 uses <|turn>role\n...<turn|>\n format
+# Gemma-4 uses <|turn>role\n...<turn|>\n format.
+# Two prompt conventions exist (https://ai.google.dev/gemma/docs/capabilities/thinking):
+# 12B / 26B-A4B / 31B prefill an empty "<|channel>thought\n<channel|>" block when
+# thinking is off (suppresses ghost thought channels); E2B / E4B never emit it.
+# "gemma-4" follows the 12B/26B-A4B/31B convention, "gemma-4-edge" the E2B/E4B one.
+# The final model turn is the SFT target, so it must contain exactly what the model
+# is conditioned on at inference: thinking off = the empty thought block (non-edge
+# only), thinking on = the reasoning trace. Historical model turns carry neither.
 gemma4_template = \
 """{%- macro strip_thinking(text) -%}
     {%- set ns = namespace(result='') -%}
@@ -945,8 +952,19 @@ gemma4_template = \
         {%- set role = message['role'] -%}
     {%- endif -%}
     {{ '<|turn>' + role + '\n' }}
+    {%- set keep_thinking = false -%}
+    {%- if role == 'model' and loop.last -%}
+        {%- set reasoning_text = message.get('reasoning') or message.get('reasoning_content') -%}
+        {%- if not thinking -%}
+            {{ '<|channel>thought\n<channel|>' }}
+        {%- elif reasoning_text -%}
+            {{ '<|channel>thought\n' + (reasoning_text | trim) + '\n<channel|>' }}
+        {%- else -%}
+            {%- set keep_thinking = true -%}
+        {%- endif -%}
+    {%- endif -%}
     {%- if message['content'] is string -%}
-        {%- if role == "model" -%}
+        {%- if role == "model" and not keep_thinking -%}
             {{ strip_thinking(message['content']) }}
         {%- else -%}
             {{ message['content'] | trim }}
@@ -960,7 +978,7 @@ gemma4_template = \
             {%- elif item['type'] == 'video' -%}
                 {{ '<|video|>' }}
             {%- elif item['type'] == 'text' -%}
-                {%- if role == "model" -%}
+                {%- if role == "model" and not keep_thinking -%}
                     {{ strip_thinking(item['text']) }}
                 {%- else -%}
                     {{ item['text'] | trim }}
@@ -974,22 +992,14 @@ gemma4_template = \
 {%- endfor -%}
 {%- if add_generation_prompt -%}
     {{'<|turn>model\n'}}
+    {%- if not thinking -%}
+        {{ '<|channel>thought\n<channel|>' }}
+    {%- endif -%}
 {%- endif -%}
 """
 
-try:
-    gemma4_ollama = _ollama_template("gemma-4")
-except KeyError:
-    gemma4_ollama = ""
-gemma4_template_eos_token = "<turn|>"
-CHAT_TEMPLATES["gemma-4"] = (gemma4_template, gemma4_template_eos_token, False, gemma4_ollama,)
-DEFAULT_SYSTEM_MESSAGE["gemma-4"] = None
-
-CHAT_TEMPLATES["gemma4"] = (gemma4_template, gemma4_template_eos_token, False, gemma4_ollama,)
-DEFAULT_SYSTEM_MESSAGE["gemma4"] = None
-
-# Gemma-4 thinking template
-gemma4_thinking_template = \
+# Gemma-4 E2B / E4B: identical, but the empty thought block is never emitted.
+gemma4_edge_template = \
 """{%- macro strip_thinking(text) -%}
     {%- set ns = namespace(result='') -%}
     {%- for part in text.split('<channel|>') -%}
@@ -1024,8 +1034,17 @@ gemma4_thinking_template = \
         {%- set role = message['role'] -%}
     {%- endif -%}
     {{ '<|turn>' + role + '\n' }}
+    {%- set keep_thinking = false -%}
+    {%- if role == 'model' and loop.last and thinking -%}
+        {%- set reasoning_text = message.get('reasoning') or message.get('reasoning_content') -%}
+        {%- if reasoning_text -%}
+            {{ '<|channel>thought\n' + (reasoning_text | trim) + '\n<channel|>' }}
+        {%- else -%}
+            {%- set keep_thinking = true -%}
+        {%- endif -%}
+    {%- endif -%}
     {%- if message['content'] is string -%}
-        {%- if role == "model" -%}
+        {%- if role == "model" and not keep_thinking -%}
             {{ strip_thinking(message['content']) }}
         {%- else -%}
             {{ message['content'] | trim }}
@@ -1039,7 +1058,7 @@ gemma4_thinking_template = \
             {%- elif item['type'] == 'video' -%}
                 {{ '<|video|>' }}
             {%- elif item['type'] == 'text' -%}
-                {%- if role == "model" -%}
+                {%- if role == "model" and not keep_thinking -%}
                     {{ strip_thinking(item['text']) }}
                 {%- else -%}
                     {{ item['text'] | trim }}
@@ -1053,16 +1072,36 @@ gemma4_thinking_template = \
 {%- endfor -%}
 {%- if add_generation_prompt -%}
     {{'<|turn>model\n'}}
-    {%- if not thinking -%}
-        {{ '<|channel>thought\n<channel|>' }}
-    {%- endif -%}
 {%- endif -%}
 """
 
-CHAT_TEMPLATES["gemma-4-thinking"] = (gemma4_thinking_template, gemma4_template_eos_token, False, gemma4_ollama,)
+try:
+    gemma4_ollama = _ollama_template("gemma-4")
+except KeyError:
+    gemma4_ollama = ""
+try:
+    gemma4_edge_ollama = _ollama_template("gemma-4-edge")
+except KeyError:
+    gemma4_edge_ollama = ""
+gemma4_template_eos_token = "<turn|>"
+CHAT_TEMPLATES["gemma-4"] = (gemma4_template, gemma4_template_eos_token, False, gemma4_ollama,)
+DEFAULT_SYSTEM_MESSAGE["gemma-4"] = None
+
+CHAT_TEMPLATES["gemma4"] = (gemma4_template, gemma4_template_eos_token, False, gemma4_ollama,)
+DEFAULT_SYSTEM_MESSAGE["gemma4"] = None
+
+CHAT_TEMPLATES["gemma-4-edge"] = (gemma4_edge_template, gemma4_template_eos_token, False, gemma4_edge_ollama,)
+DEFAULT_SYSTEM_MESSAGE["gemma-4-edge"] = None
+
+CHAT_TEMPLATES["gemma4-edge"] = (gemma4_edge_template, gemma4_template_eos_token, False, gemma4_edge_ollama,)
+DEFAULT_SYSTEM_MESSAGE["gemma4-edge"] = None
+
+# Thinking is controlled per-render via enable_thinking; the "-thinking" keys are
+# aliases of the 12B/26B-A4B/31B template.
+CHAT_TEMPLATES["gemma-4-thinking"] = CHAT_TEMPLATES["gemma-4"]
 DEFAULT_SYSTEM_MESSAGE["gemma-4-thinking"] = None
 
-CHAT_TEMPLATES["gemma4-thinking"] = (gemma4_thinking_template, gemma4_template_eos_token, False, gemma4_ollama,)
+CHAT_TEMPLATES["gemma4-thinking"] = CHAT_TEMPLATES["gemma4"]
 DEFAULT_SYSTEM_MESSAGE["gemma4-thinking"] = None
 
 # =========================================== GPT-OSS

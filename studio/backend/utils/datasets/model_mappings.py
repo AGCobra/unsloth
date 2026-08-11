@@ -214,19 +214,22 @@ TEMPLATE_TO_MODEL_MAPPER = {
         "unsloth/gemma-3n-E2B-it-unsloth-bnb-4bit",
     ),
     "gemma-4": (
+        "unsloth/gemma-4-12B-it",
+        "google/gemma-4-12B-it",
+        "unsloth/gemma-4-12B-it-unsloth-bnb-4bit",
+        "unsloth/gemma-4-26B-A4B-it",
+        "google/gemma-4-26B-A4B-it",
+        "unsloth/gemma-4-31B-it",
+        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit",
+        "google/gemma-4-31B-it",
+    ),
+    "gemma-4-edge": (
         "unsloth/gemma-4-E2B-it",
         "google/gemma-4-E2B-it",
         "unsloth/gemma-4-E4B-it",
         "google/gemma-4-E4B-it",
         "unsloth/gemma-4-E2B-it-unsloth-bnb-4bit",
         "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit",
-    ),
-    "gemma-4-thinking": (
-        "unsloth/gemma-4-26B-A4B-it",
-        "google/gemma-4-26B-A4B-it",
-        "unsloth/gemma-4-31B-it",
-        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit",
-        "google/gemma-4-31B-it",
     ),
     "qwen2.5": (
         "unsloth/Qwen2.5-0.5B-Instruct-unsloth-bnb-4bit",
@@ -461,11 +464,11 @@ def is_gpt_oss_model_name(name: str) -> bool:
 
 
 TEMPLATE_TO_RESPONSES_MAPPER = {
-    "gemma-4-thinking": {
+    "gemma-4": {
         "instruction": "<|turn>user\n",
         "response": "<|turn>model\n",
     },
-    "gemma-4": {
+    "gemma-4-edge": {
         "instruction": "<|turn>user\n",
         "response": "<|turn>model\n",
     },
